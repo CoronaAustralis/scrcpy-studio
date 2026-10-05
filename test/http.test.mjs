@@ -15,11 +15,18 @@ test('server serves LAN UI without login and refuses cross-origin control or mis
   assert.equal((await fetch(`${base}/api/devices`)).status, 403);
   assert.equal((await fetch(`${base}/api/info`, { headers: { Origin: 'https://example.com' } })).status, 403);
   assert.equal(page.headers.get('www-authenticate'), null);
-  for (const authority of ['192.168.1.20:8787', 'screen.example.com:9000']) {
+  for (const authority of ['192.168.1.20:7000', 'screen.example.com:9000']) {
     const status = await new Promise((resolve, reject) => {
       http.get(base, { headers: { Host:authority, Origin:`http://${authority}` } }, res => { res.resume(); resolve(res.statusCode); }).on('error', reject);
     });
     assert.equal(status, 200);
+  }
+  const navigationHeaders = { Host:'192.168.1.20:7000', 'Sec-Fetch-Site':'cross-site', 'Sec-Fetch-Mode':'navigate', 'Sec-Fetch-Dest':'document' };
+  for (const [pathname, expected] of [['/',200], ['/api/info',403], ['/api/adb',403]]) {
+    const status = await new Promise((resolve,reject) => {
+      http.get(`${base}${pathname}`, { headers:navigationHeaders }, res => { res.resume(); resolve(res.statusCode); }).on('error',reject);
+    });
+    assert.equal(status,expected);
   }
   assert.equal((await fetch(`${base}/server/index.mjs`)).status, 404);
   assert.equal((await fetch(base, { method: 'POST' })).status, 405);

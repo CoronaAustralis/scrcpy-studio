@@ -39,6 +39,7 @@ test('access policy accepts LAN and domain authorities while rejecting cross-ori
   assert.ok(allows({ host:'screen.example.com', origin:'https://screen.example.com' }));
   assert.ok(allows({ host:'screen.example.com', origin:'http://screen.example.com' }));
   assert.ok(allows({ host:'192.168.1.20:8787', origin:'http://192.168.1.20:8787' }));
+  assert.ok(allows({ host:'192.168.1.20:7000', origin:'https://192.168.1.20:7000' }));
   assert.ok(allows({ host:'[::1]:9000', origin:'http://[::1]:9000' }));
   assert.ok(allows({ host:'screen.example.com' }));
   assert.ok(!allows({ host:'screen.example.com', origin:'https://evil.example.com' }));
