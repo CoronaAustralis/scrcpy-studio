@@ -1,0 +1,9 @@
+*
+!package.json
+!pnpm-lock.yaml
+!server/
+!server/**
+!public/
+!public/**
+!docker/
+!docker/entrypoint.sh

@@ -1,0 +1,17 @@
+{
+  "name": "scrcpy-studio",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "A low-latency WebCodecs client for official scrcpy 4.1",
+  "engines": { "node": ">=20" },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": { "ws": "8.22.0" }
+}
