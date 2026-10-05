@@ -7,3 +7,4 @@
 !public/**
 !docker/
 !docker/entrypoint.sh
+!docker/healthcheck.mjs

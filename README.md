@@ -12,24 +12,26 @@
 
 镜像包含 Node.js 24、ADB、官方 scrcpy 4.1 客户端及 `scrcpy-server`，无需宿主机安装 Node / pnpm / ADB / scrcpy。官方 Linux 包有固定 SHA-256 校验。目前构建 **linux/amd64**；ARM64 主机需要模拟运行，尚未提供原生 ARM64 镜像。网页投屏不需要容器显示服务器，也不需要给容器映射 GPU；硬解发生在访问网页的电脑浏览器中。
 
-在本目录自行构建并启动：
+在本目录自行构建镜像：
 
 ```sh
-docker compose up -d --build
+docker build -t scrcpy-studio:local .
 ```
 
-或使用发布的镜像（替换小写 owner/repository）：
+使用发布的镜像启动（替换小写 owner/repository；本地构建时将镜像名换成 `scrcpy-studio:local`）：
 
 ```sh
 docker run -d --name scrcpy-studio --restart unless-stopped \
-  -p 127.0.0.1:8787:8787 \
+  -p 8787:8787 \
+  -e TLS_HOSTS=localhost,127.0.0.1,192.168.1.20 \
   -v scrcpy-adb-keys:/home/node/.android \
+  -v scrcpy-tls:/home/node/.tls \
   ghcr.io/owner/repository:latest
 ```
 
-打开 http://localhost:8787，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。命名卷保存 ADB 授权密钥；首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
+将示例中的 `192.168.1.20` 换成运行容器的服务器 IP。镜像默认启用 HTTPS，首次启动自动生成证书。按下文导入 CA 信任后，打开 https://localhost:8787 或 `https://服务器IP:8787`，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。命名卷保存 ADB 授权密钥和 HTTPS 证书；首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
 
-也可复制 `.env.example` 为 `.env`，填写 `STUDIO_IMAGE` 后运行 `docker compose pull`、`docker compose up -d --no-build`。查看日志用 `docker compose logs -f`。更新镜像用相同的 pull / up 命令；不要删除密钥卷，否则需要重新授权。
+端口示例发布到宿主机所有网络接口，不限定回环地址。查看日志用 `docker logs -f scrcpy-studio`。更新时拉取新镜像并重新创建容器，继续使用同一个密钥卷，避免重新授权。
 
 ### Web UI 的 ADB 操作
 
@@ -39,17 +41,67 @@ docker run -d --name scrcpy-studio --restart unless-stopped \
 
 手机必须事先开启 USB 调试或无线调试。传统 `5555` 网络 ADB 需要设备已经启用 TCP 调试；网页不能凭空开启未授权手机的调试功能。容器中的 `127.0.0.1` 指容器自身；Redroid 在其他容器时使用容器网络服务名或宿主机可达地址。Docker Desktop 访问宿主机服务可用 `host.docker.internal`。无线配对建议手动输入地址，桥接网络不保证 mDNS 自动发现。
 
-### 远程访问与 USB
+### 访问与登录
 
-默认 Compose 只在宿主机回环地址发布端口。本地 HTTP 可使用 WebCodecs；远程访问请通过 **HTTPS 反向代理**，否则浏览器可能禁用 WebCodecs。代理需转发原始 Host，并支持 WebSocket Upgrade。设置 `PUBLIC_ORIGIN=https://scrcpy.example.com`，并设置 `STUDIO_PASSWORD`（用户名 `STUDIO_USER` 默认 `admin`），浏览器会要求登录。如果代理在另一个容器中，让代理与 studio 加入同一 Docker 网络并代理到 `studio:8787`；如果要更改发布地址，使用 `STUDIO_BIND`。HTTP Basic 密码应仅通过 HTTPS 远程传输。
+`STUDIO_PASSWORD` 未设置或为空字符串时，直接进入 Web UI，不需要登录，也不会弹出登录框。设置非空密码后启用 HTTP Basic 登录，用户名由 `STUDIO_USER` 指定，默认为 `admin`。例如，在启动命令中添加 `-e STUDIO_PASSWORD=你的密码`。
+
+默认监听所有网络接口，镜像可通过 `https://服务器地址:8787` 打开 Web UI，无需配置域名白名单。网页和 WebSocket 保留同站请求校验，ADB 操作及投屏仍校验会话令牌。
+
+WebCodecs 需要安全上下文。镜像已内置 HTTPS，无需额外服务；本地 Node 运行默认仍使用 HTTP，可通过 `http://localhost:8787` 投屏。
+
+### 自动生成 HTTPS 证书
+
+使用 Compose 时，在 `.env` 中填写实际访问的服务器 IP / 域名，然后启动：
+
+```dotenv
+TLS_HOSTS=localhost,127.0.0.1,192.168.1.20,scrcpy.example.com
+```
+
+```sh
+docker compose up -d --build
+docker compose cp studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
+```
+
+使用上面的 `docker run` 启动时，导出命令为：
+
+```sh
+docker cp scrcpy-studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
+```
+
+在**打开网页的电脑**上导入这个 CA：Windows 双击证书 → 安装证书 → 当前用户 → 将所有证书放入“受信任的根证书颁发机构”。macOS 导入钥匙串并设置信任；Linux 根据发行版或浏览器的证书管理器导入。重新打开浏览器，访问证书中包含的 IP 或域名。
+
+**必须让浏览器信任证书，并使用 `TLS_HOSTS` 中的地址访问。仅点击忽略证书错误，不保证 WebCodecs 可用。** 证书配置不会绕过浏览器信任机制。只导出 `ca.crt` 公共证书，私钥 `ca.key` / `server.key` 留在证书卷内。
+
+每个部署首次启动会生成独立 CA 和服务器证书。证书卷在更新镜像时保留；修改 `TLS_HOSTS` 后重新创建容器，会用原 CA 签发新证书，无需重新导入 CA。服务器证书有效期一年，启动时如果不足七天会重签；长期连续运行时请在到期前重启容器。CA 有效期十年。删除证书卷会生成新 CA，需要重新导入信任。
+
+### 使用已有证书
+
+将包含完整证书链的 PEM 文件和私钥只读挂载，再指定 `TLS_CERT` 和 `TLS_KEY`。例如在 `compose.yaml` 的 `studio` 服务中加入以下配置（合并到现有 environment / volumes）：
+
+```yaml
+environment:
+  TLS_CERT: /certs/fullchain.pem
+  TLS_KEY: /certs/privkey.pem
+volumes:
+  - ./certs:/certs:ro
+```
+
+证书私钥需允许容器的 `node` 用户（UID 1000）读取。提供这两个变量时直接使用已有证书，不生成本地 CA；证书更新后重启容器生效。若要使用 HTTP，设置 `HTTPS=false` 并取消这两个变量；同一端口只提供一种协议。
 
 | 环境变量 | 默认值 / 用途 |
 | --- | --- |
-| `HOST` | 本地运行 `127.0.0.1`；镜像 `0.0.0.0` |
+| `HOST` | 服务监听地址，本地运行和镜像默认均为 `0.0.0.0` |
 | `PORT` | 容器内服务端口 `8787` |
-| `PUBLIC_ORIGIN` | 允许访问的外部 origin，包含协议及非默认端口 |
-| `STUDIO_USER` / `STUDIO_PASSWORD` | 可选 HTTP Basic 登录；密码为空则不启用 |
-| `STUDIO_PORT` / `STUDIO_BIND` | Compose 宿主机发布端口 / 地址 |
+| `STUDIO_USER` | 登录用户名，默认 `admin`；仅启用密码时使用 |
+| `STUDIO_PASSWORD` | 默认空；直接进入 Web UI，非空时才要求登录 |
+| `HTTPS` | 镜像默认 `true`；本地 Node 运行需显式设置 `true` 才自动生成证书 |
+| `TLS_HOSTS` | 自动证书包含的地址，逗号分隔，无协议和端口；默认 `localhost,127.0.0.1,::1` |
+| `TLS_DIR` | 自动证书目录；镜像 `/home/node/.tls`，本地 `.tls` |
+| `TLS_CERT` / `TLS_KEY` | 自有 PEM 证书链和私钥路径，必须一起设置；优先于自动证书 |
+
+本地启用自动 HTTPS 需要 PATH 中有 OpenSSL；Docker 镜像已内置。`.env` 供 Compose 读取，本地 `pnpm start` 使用系统环境变量。
+
+### USB
 
 Linux USB 透传需额外映射 USB 设备，并通过宿主机 udev 权限和 Compose `group_add` 让镜像的 `node` 用户（UID 1000）能访问设备；默认配置不自动授予 USB 权限。Docker Desktop 的 USB 透传依赖宿主机配置，因此推荐网络 ADB。不要同时让宿主机和容器 ADB 占用同一 USB 设备。
 
@@ -65,7 +117,7 @@ pnpm install --frozen-lockfile
 pnpm start
 ```
 
-在新版 Chrome / Edge 打开 **http://127.0.0.1:8787**（或 http://localhost:8787），选择设备，点击「开始投屏」。
+在新版 Chrome / Edge 打开 **http://localhost:8787**，选择设备，点击「开始投屏」。
 
 当前电脑自动识别 `D:\tools\scrcpy\scrcpy.exe` 及旁边的 `scrcpy-server`，ADB 使用 PATH 中的版本。其他机器可这样指定：
 
@@ -77,7 +129,7 @@ pnpm start
 
 也可设置 `SCRCPY_PATH` 为官方可执行文件的绝对路径，或设置 `SCRCPY_SERVER_PATH` 为 **4.1** 的服务端文件。手动指定服务端时由使用者保证版本；手机端版本不匹配会在界面报错。**不能使用旧 ws-scrcpy 的 1.19-ws8 JAR**，也不能把 3.x 的服务端当作 4.1 使用。
 
-`PORT` 可覆盖默认的 8787。服务默认绑定 `127.0.0.1`，可用 `HOST` 修改；网页和 WebSocket 校验 Host、Origin 和会话令牌。远程部署配置见上文。
+`PORT` 可覆盖默认的 8787，`HOST` 可指定监听地址；网页和 WebSocket 校验 Host、Origin 和会话令牌。
 
 若 pnpm 的临时目录在受限的自动化环境中不可写，可以把 `TEMP` / `TMP` 设置为当前项目内一个可写目录；正常用户终端通常不需要。
 
@@ -150,4 +202,4 @@ pnpm smoke
 - 触控失败：部分品牌需额外启用「USB 调试（安全设置）」。
 - 手机编码器能力不足时官方 scrcpy 可能自动降分辨率，实际尺寸以预览顶部为准。
 
-官方 scrcpy 由 Genymobile 及贡献者维护，采用 Apache-2.0 许可证。本项目使用本机已安装的官方服务端，不修改或内嵌其二进制。
+官方 scrcpy 由 Genymobile 及贡献者维护，采用 Apache-2.0 许可证。本地运行使用已安装的官方服务端；Docker 镜像包含官方发布包及其许可证，不修改其二进制。

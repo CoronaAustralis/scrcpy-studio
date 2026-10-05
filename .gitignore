@@ -3,4 +3,5 @@ node_modules/
 artifacts/
 *.log
 .env
+.tls/
 VALIDATION.md

@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-for (const dir of ['server', 'public', 'scripts', 'test']) {
+for (const dir of ['server', 'public', 'scripts', 'test', 'docker']) {
   for (const name of readdirSync(dir).filter(n => /\.(mjs|js)$/.test(n))) {
     const result = spawnSync(process.execPath, ['--check', `${dir}/${name}`], { stdio: 'inherit' });
     if (result.status !== 0) process.exit(result.status ?? 1);

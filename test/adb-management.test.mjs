@@ -32,15 +32,23 @@ test('restart and disconnect stop matching sessions before changing ADB', async 
   }
   await assert.rejects(performAdbAction({ action:'connect', target:'host' }, { run:async () => 'failed to connect' }), /failed/);
 });
-test('access policy supports mapped ports, configured HTTPS origin and optional Basic auth', () => {
-  const policy = createAccessPolicy({ publicOrigin:'https://screen.example.com', password:'secret' });
+test('access policy accepts LAN and domain authorities while rejecting cross-origin requests', () => {
+  const policy = createAccessPolicy({ password:'secret' });
   const allows = headers => policy.allows({ headers });
   assert.ok(allows({ host:'localhost:9000', origin:'http://localhost:9000' }));
   assert.ok(allows({ host:'screen.example.com', origin:'https://screen.example.com' }));
-  assert.ok(!allows({ host:'screen.example.com', origin:'http://screen.example.com' }));
-  assert.ok(!allows({ host:'evil.example.com' }));
+  assert.ok(allows({ host:'screen.example.com', origin:'http://screen.example.com' }));
+  assert.ok(allows({ host:'192.168.1.20:8787', origin:'http://192.168.1.20:8787' }));
+  assert.ok(allows({ host:'[::1]:9000', origin:'http://[::1]:9000' }));
+  assert.ok(allows({ host:'screen.example.com' }));
+  assert.ok(!allows({ host:'screen.example.com', origin:'https://evil.example.com' }));
+  assert.ok(!allows({ host:'screen.example.com:9000', origin:'https://screen.example.com' }));
+  for (const host of ['bad/host', 'user@host', 'host,other', 'host:99999', '']) assert.ok(!allows({ host }));
+  for (const origin of ['null', 'file://screen.example.com', 'https://screen.example.com/path']) assert.ok(!allows({ host:'screen.example.com', origin }));
   assert.ok(!allows({ host:'localhost:8787', 'sec-fetch-site':'cross-site' }));
   assert.ok(!policy.authenticated({ headers:{} }));
   assert.ok(policy.authenticated({ headers:{ authorization:`Basic ${Buffer.from('admin:secret').toString('base64')}` } }));
-  assert.throws(() => createAccessPolicy({ publicOrigin:'https://example.com/path' }));
+  assert.ok(!policy.authenticated({ headers:{ authorization:`Basic ${Buffer.from('admin:wrong').toString('base64')}` } }));
+  assert.ok(createAccessPolicy().authenticated({ headers:{} }));
+  assert.ok(createAccessPolicy({ password:'' }).authenticated({ headers:{} }));
 });

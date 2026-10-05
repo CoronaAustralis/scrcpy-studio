@@ -1,4 +1,6 @@
 import http from 'node:http';
+import https from 'node:https';
+import { tlsOptions } from './tls.mjs';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer } from 'ws';
@@ -11,8 +13,8 @@ import { performAdbAction, validateAdbAction } from './adb-management.mjs';
 const port = Number(process.env.PORT || 8787);
 const token = randomBytes(32).toString('hex');
 const sessions = new Map();
-const host = process.env.HOST || '127.0.0.1';
-const access = createAccessPolicy({ publicOrigin: process.env.PUBLIC_ORIGIN, username: process.env.STUDIO_USER, password: process.env.STUDIO_PASSWORD });
+const host = process.env.HOST || '0.0.0.0';
+const access = createAccessPolicy({ username: process.env.STUDIO_USER, password: process.env.STUDIO_PASSWORD });
 let adbBusy = false;
 async function stopSessions(selector) {
   await Promise.all([...sessions.values()].filter(s => selector === 'all' || s.serial === selector || (selector === 'network' && /:|\._adb-tls-connect\._tcp/.test(s.serial))).map(async s => {
@@ -37,7 +39,8 @@ const assets = new Map([
 ]);
 function authorized(value) { const b = Buffer.from(value || ''); const a = Buffer.from(token); return a.length === b.length && timingSafeEqual(a, b); }
 function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); }
-const server = http.createServer(async (req, res) => {
+const tls = tlsOptions();
+const handleRequest = async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' blob: data:; worker-src 'self'; frame-ancestors 'none'");
   if (!access.allows(req)) return json(res, 403, { error: 'Host or Origin not allowed' });
@@ -74,7 +77,8 @@ const server = http.createServer(async (req, res) => {
     const data = await readFile(new URL(asset[0], publicRoot));
     res.writeHead(200, { 'Content-Type': `${asset[1]}; charset=utf-8`, 'Cache-Control': 'no-store' }); res.end(data);
   } catch (error) { json(res, 500, { error: error.message }); }
-});
+};
+const server = tls ? https.createServer(tls, handleRequest) : http.createServer(handleRequest);
 const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 128 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
@@ -112,6 +116,6 @@ server.on('upgrade', (req, socket, head) => {
     });
   });
 });
-server.listen(port, host, () => console.log(`Scrcpy Studio → http://${host}:${port}\nOfficial scrcpy 4.1 · WebCodecs`));
+server.listen(port, host, () => console.log(`Scrcpy Studio → ${tls ? 'https' : 'http'}://${host}:${port}\nOfficial scrcpy 4.1 · WebCodecs`));
 async function shutdown() { await Promise.all([...sessions.values()].map(s => s.stop())); for (const ws of wss.clients) ws.terminate(); server.close(); }
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

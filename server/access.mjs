@@ -5,28 +5,21 @@ function equal(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function createAccessPolicy({ publicOrigin = '', username = 'admin', password = '' } = {}) {
-  let external;
-  if (publicOrigin) {
-    const url = new URL(publicOrigin);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-      throw new Error('PUBLIC_ORIGIN 必须是完整的 HTTP(S) origin，例如 https://scrcpy.example.com');
-    }
-    external = url.origin;
-  }
+export function createAccessPolicy({ username = 'admin', password = '' } = {}) {
   return {
     allows(req) {
       const host = req.headers.host;
-      if (!host || /[\s/@\\?#]/.test(host)) return false;
-      let origin;
+      if (!host || /[\s/@\\?#,]/.test(host) || req.headers['sec-fetch-site'] === 'cross-site') return false;
       try {
-        const local = new URL(`http://${host}`);
-        const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(local.hostname);
-        if (external && host === new URL(external).host) origin = external;
-        else if (loopback) origin = local.origin;
-        else return false;
+        const target = new URL(`http://${host}`);
+        if (!target.hostname) return false;
+        if (!req.headers.origin) return true;
+        const origin = new URL(req.headers.origin);
+        if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== req.headers.origin) return false;
+        // Use the requested authority, including mapped ports, for HTTP and HTTPS.
+        // This also works when TLS terminates upstream without trusting forwarded headers.
+        return origin.origin === new URL(`${origin.protocol}//${host}`).origin;
       } catch { return false; }
-      return (!req.headers.origin || req.headers.origin === origin) && req.headers['sec-fetch-site'] !== 'cross-site';
     },
     authenticated(req) {
       if (!password) return true;
