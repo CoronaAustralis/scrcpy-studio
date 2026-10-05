@@ -18,7 +18,7 @@ FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl tini libusb-1.0-0 libudev1 libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=scrcpy /opt/scrcpy /opt/scrcpy
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 HTTPS=true TLS_DIR=/home/node/.tls \
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 HTTPS=false TLS_DIR=/home/node/.tls \
     ADB_PATH=/opt/scrcpy/adb SCRCPY_SERVER_PATH=/opt/scrcpy/scrcpy-server \
     PATH="/opt/scrcpy:${PATH}"
 WORKDIR /app

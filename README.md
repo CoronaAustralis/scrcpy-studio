@@ -6,7 +6,12 @@
 
 ## Docker / GitHub 镜像
 
-**将本目录 `scrcpy-studio` 作为 GitHub 仓库根目录**（其中包含 `.github/workflows/docker.yml`），不要把它再嵌套到仓库的子目录。推送到 `main` / `master`、推送 `v*` 版本标签或手动运行 Actions，会先检查代码和测试，再构建并发布 `ghcr.io/<owner>/<repository>`。默认分支生成 `latest`，`v0.2.0` 生成 `0.2.0` / `0.2`，另外附带提交 SHA 标签。PR 只构建，不推送。
+**将本目录 `scrcpy-studio` 作为 GitHub 仓库根目录**（其中包含 `.github/workflows/docker.yml`），不要把它再嵌套到仓库的子目录。工作流先检查代码和测试，再构建并发布 `ghcr.io/coronaaustralis/scrcpy-studio`，只有两种触发方式：
+
+- 推送任意 Git tag：只发布镜像 `latest`，不会生成版本或 SHA 镜像标签。
+- 在 Actions 手动运行：必须填写 `tag`，只发布所填标签（例如 `http-test`）；除非输入 `latest`，否则不会更新 `latest`。
+
+普通分支推送和 PR 不触发此工作流；仓库已有 Git tag 不会让普通提交自动发布。
 
 使用仓库自带的 `GITHUB_TOKEN`，无需创建 Docker Hub 密钥；仓库需允许 Actions 写入 Packages。首次发布后，如需免登录拉取，在 GitHub Package 设置中将包设为 Public；私有包则先登录 GHCR。
 
@@ -18,18 +23,18 @@
 docker build -t scrcpy-studio:local .
 ```
 
-使用发布的镜像启动（替换小写 owner/repository；本地构建时将镜像名换成 `scrcpy-studio:local`）：
+使用发布的镜像启动（本地构建时将镜像名换成 `scrcpy-studio:local`）：
 
 ```sh
 docker run -d --name scrcpy-studio --restart unless-stopped \
   -p 8787:8787 \
-  -e TLS_HOSTS=localhost,127.0.0.1,192.168.1.20 \
   -v scrcpy-adb-keys:/home/node/.android \
-  -v scrcpy-tls:/home/node/.tls \
-  ghcr.io/owner/repository:latest
+  ghcr.io/coronaaustralis/scrcpy-studio:latest
 ```
 
-将示例中的 `192.168.1.20` 换成运行容器的服务器 IP。镜像默认启用 HTTPS，首次启动自动生成证书。按下文导入 CA 信任后，打开 https://localhost:8787 或 `https://服务器IP:8787`，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。命名卷保存 ADB 授权密钥和 HTTPS 证书；首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
+当前版本默认使用 HTTP，不生成或加载自动证书。打开 http://localhost:8787 或 `http://服务器IP:8787`，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。命名卷保存 ADB 授权密钥；首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
+
+如果复用旧 `.env`，请把 `HTTPS=true` 改为 `HTTPS=false`，并取消自定义的 `TLS_CERT` / `TLS_KEY`，然后重新创建容器。旧证书卷可以保留，HTTP 模式不会使用它。
 
 端口示例发布到宿主机所有网络接口，不限定回环地址。查看日志用 `docker logs -f scrcpy-studio`。更新时拉取新镜像并重新创建容器，继续使用同一个密钥卷，避免重新授权。
 
@@ -45,15 +50,16 @@ docker run -d --name scrcpy-studio --restart unless-stopped \
 
 `STUDIO_PASSWORD` 未设置或为空字符串时，直接进入 Web UI，不需要登录，也不会弹出登录框。设置非空密码后启用 HTTP Basic 登录，用户名由 `STUDIO_USER` 指定，默认为 `admin`。例如，在启动命令中添加 `-e STUDIO_PASSWORD=你的密码`。
 
-默认监听所有网络接口，镜像可通过 `https://服务器地址:8787` 打开 Web UI，无需配置域名白名单。网页和 WebSocket 保留同站请求校验，ADB 操作及投屏仍校验会话令牌。
+默认监听所有网络接口，镜像可通过 `http://服务器地址:8787` 打开 Web UI，无需配置域名白名单。网页和 WebSocket 保留同站请求校验，ADB 操作及投屏仍校验会话令牌。
 
-WebCodecs 需要安全上下文。镜像已内置 HTTPS，无需额外服务；本地 Node 运行默认仍使用 HTTP，可通过 `http://localhost:8787` 投屏。
+当前先以 HTTP 模式测试。WebCodecs 仍受浏览器安全上下文限制：localhost HTTP 通常可用，远程 IP 的普通 HTTP 通常无法投屏，即使能打开 Web UI。自签名 HTTPS 中接受证书例外的行为与普通 HTTP 不同，前者能用不能证明后者也能用。
 
-### 自动生成 HTTPS 证书
+### 可选：自动生成 HTTPS 证书（默认关闭）
 
-使用 Compose 时，在 `.env` 中填写实际访问的服务器 IP / 域名，然后启动：
+需要恢复 HTTPS 时，在 `.env` 中启用并填写实际访问的服务器 IP / 域名，然后启动：
 
 ```dotenv
+HTTPS=true
 TLS_HOSTS=localhost,127.0.0.1,192.168.1.20,scrcpy.example.com
 ```
 
@@ -62,7 +68,7 @@ docker compose up -d --build
 docker compose cp studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
 ```
 
-使用上面的 `docker run` 启动时，导出命令为：
+使用 `docker run` 时，另加 `-e HTTPS=true`、`-e TLS_HOSTS=实际服务器地址` 和 `-v scrcpy-tls:/home/node/.tls`；导出命令为：
 
 ```sh
 docker cp scrcpy-studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
@@ -70,7 +76,7 @@ docker cp scrcpy-studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
 
 在**打开网页的电脑**上导入这个 CA：Windows 双击证书 → 安装证书 → 当前用户 → 将所有证书放入“受信任的根证书颁发机构”。macOS 导入钥匙串并设置信任；Linux 根据发行版或浏览器的证书管理器导入。重新打开浏览器，访问证书中包含的 IP 或域名。
 
-**必须让浏览器信任证书，并使用 `TLS_HOSTS` 中的地址访问。仅点击忽略证书错误，不保证 WebCodecs 可用。** 证书配置不会绕过浏览器信任机制。只导出 `ca.crt` 公共证书，私钥 `ca.key` / `server.key` 留在证书卷内。
+`TLS_HOSTS` 用于证书的 Subject Alternative Name，决定证书匹配哪些 IP / 域名，不是访问白名单。部分浏览器接受自签名证书例外后仍能使用 WebCodecs，但不同浏览器或策略可能不同；导入 CA 信任并使用匹配的地址更可靠。HTTP 模式不使用这个参数。只导出 `ca.crt` 公共证书，私钥 `ca.key` / `server.key` 留在证书卷内。
 
 每个部署首次启动会生成独立 CA 和服务器证书。证书卷在更新镜像时保留；修改 `TLS_HOSTS` 后重新创建容器，会用原 CA 签发新证书，无需重新导入 CA。服务器证书有效期一年，启动时如果不足七天会重签；长期连续运行时请在到期前重启容器。CA 有效期十年。删除证书卷会生成新 CA，需要重新导入信任。
 
@@ -94,7 +100,7 @@ volumes:
 | `PORT` | 容器内服务端口 `8787` |
 | `STUDIO_USER` | 登录用户名，默认 `admin`；仅启用密码时使用 |
 | `STUDIO_PASSWORD` | 默认空；直接进入 Web UI，非空时才要求登录 |
-| `HTTPS` | 镜像默认 `true`；本地 Node 运行需显式设置 `true` 才自动生成证书 |
+| `HTTPS` | 默认关闭；设置 `true` 才自动生成证书并启用 HTTPS |
 | `TLS_HOSTS` | 自动证书包含的地址，逗号分隔，无协议和端口；默认 `localhost,127.0.0.1,::1` |
 | `TLS_DIR` | 自动证书目录；镜像 `/home/node/.tls`，本地 `.tls` |
 | `TLS_CERT` / `TLS_KEY` | 自有 PEM 证书链和私钥路径，必须一起设置；优先于自动证书 |
