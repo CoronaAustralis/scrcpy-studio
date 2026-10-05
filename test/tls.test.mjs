@@ -6,22 +6,21 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import https from 'node:https';
 import { WebSocket } from 'ws';
-import { certificateHosts, tlsOptions } from '../server/tls.mjs';
+import { tlsOptions } from '../server/tls.mjs';
 
-test('certificate host validation and explicit certificate settings', () => {
-  assert.deepEqual(certificateHosts('192.168.1.20,screen.example.com,::1'), ['IP:192.168.1.20','DNS:screen.example.com','IP:::1']);
-  for (const host of ['https://example.com','example.com:8787','host\nDNS:evil','*.example.com','-bad']) assert.throws(() => certificateHosts(host));
+test('HTTP defaults and explicit certificate settings', () => {
   assert.equal(tlsOptions({}), undefined);
   assert.throws(() => tlsOptions({ TLS_CERT:'missing' }), /一起/);
 });
 
-test('generated CA supports verified HTTPS and WSS, reuse, host changes and custom certificates', async t => {
+test('automatic certificates support HTTPS and WSS without address configuration', async t => {
   mkdirSync('artifacts', { recursive:true });
   const dir = mkdtempSync('artifacts/tls-test-');
   t.after(() => rmSync(dir, { recursive:true, force:true }));
-  const env = { HTTPS:'true', TLS_DIR:dir, TLS_HOSTS:'localhost,127.0.0.1,192.168.1.20' };
+  const env = { HTTPS:'true', TLS_DIR:dir };
   const options = tlsOptions(env), ca = readFileSync(`${dir}/ca.crt`);
-  assert.ok(new X509Certificate(options.cert).checkIP('192.168.1.20'));
+  assert.ok(new X509Certificate(options.cert).checkIP('127.0.0.1'));
+  assert.equal(new X509Certificate(options.cert).checkIP('192.168.1.20'), undefined);
   assert.deepEqual(tlsOptions(env).cert, options.cert);
   assert.deepEqual(tlsOptions({ TLS_CERT:`${dir}/server.crt`, TLS_KEY:`${dir}/server.key` }).cert, options.cert);
   const port = 18789;
@@ -42,7 +41,6 @@ test('generated CA supports verified HTTPS and WSS, reuse, host changes and cust
     const socket = new WebSocket(`wss://127.0.0.1:${port}/stream?token=${info.token}`, { ca, origin:`https://127.0.0.1:${port}` });
     socket.on('open', () => socket.close()); socket.on('close',resolve); socket.on('error',reject);
   });
-  const changed = tlsOptions({ ...env, TLS_HOSTS:'localhost,127.0.0.1,192.168.1.21' });
-  assert.ok(new X509Certificate(changed.cert).checkIP('192.168.1.21'));
+  assert.deepEqual(tlsOptions(env).cert, options.cert);
   assert.deepEqual(readFileSync(`${dir}/ca.crt`),ca);
 });

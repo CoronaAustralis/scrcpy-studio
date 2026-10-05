@@ -27,14 +27,11 @@ docker build -t scrcpy-studio:local .
 
 ```sh
 docker run -d --name scrcpy-studio --restart unless-stopped \
-  -p 8787:8787 \
-  -v scrcpy-adb-keys:/home/node/.android \
+  -p 8787:8787 -v adb-keys:/home/node/.android\
   ghcr.io/coronaaustralis/scrcpy-studio:latest
 ```
 
-当前版本默认使用 HTTP，不生成或加载自动证书。打开 http://localhost:8787 或 `http://服务器IP:8787`，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。命名卷保存 ADB 授权密钥；首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
-
-如果复用旧 `.env`，请把 `HTTPS=true` 改为 `HTTPS=false`，并取消自定义的 `TLS_CERT` / `TLS_KEY`，然后重新创建容器。旧证书卷可以保留，HTTP 模式不会使用它。
+镜像默认使用 HTTPS，首次启动自动生成证书。打开 https://localhost:8787 或 `https://服务器IP:8787`，接受浏览器证书例外后，点击 **ADB 管理 · 连接设备**，输入手机或 Redroid 的局域网 IP 和 ADB 端口即可连接。镜像启动时自动启动自身的 ADB server。首次连接仍须在手机确认授权。容器无需暴露 ADB 的 5037 端口。
 
 端口示例发布到宿主机所有网络接口，不限定回环地址。查看日志用 `docker logs -f scrcpy-studio`。更新时拉取新镜像并重新创建容器，继续使用同一个密钥卷，避免重新授权。
 
@@ -50,35 +47,31 @@ docker run -d --name scrcpy-studio --restart unless-stopped \
 
 `STUDIO_PASSWORD` 未设置或为空字符串时，直接进入 Web UI，不需要登录，也不会弹出登录框。设置非空密码后启用 HTTP Basic 登录，用户名由 `STUDIO_USER` 指定，默认为 `admin`。例如，在启动命令中添加 `-e STUDIO_PASSWORD=你的密码`。
 
-默认监听所有网络接口，镜像可通过 `http://服务器地址:8787` 打开 Web UI，无需配置域名白名单。网页和 WebSocket 保留同站请求校验，ADB 操作及投屏仍校验会话令牌。
+默认监听所有网络接口，镜像可通过 `https://服务器地址:8787` 打开 Web UI，无需配置域名白名单。网页和 WebSocket 保留同站请求校验，ADB 操作及投屏仍校验会话令牌。
 
-当前先以 HTTP 模式测试。WebCodecs 仍受浏览器安全上下文限制：localhost HTTP 通常可用，远程 IP 的普通 HTTP 通常无法投屏，即使能打开 Web UI。自签名 HTTPS 中接受证书例外的行为与普通 HTTP 不同，前者能用不能证明后者也能用。
+镜像默认启用 HTTPS。WebCodecs 仍受浏览器安全上下文限制；若手动关闭 HTTPS，localhost HTTP 通常可用，远程 IP 的普通 HTTP 通常无法投屏，即使能打开 Web UI。
 
-### 可选：自动生成 HTTPS 证书（默认关闭）
+### 自动生成 HTTPS 证书（镜像默认启用）
 
-需要恢复 HTTPS 时，在 `.env` 中启用并填写实际访问的服务器 IP / 域名，然后启动：
+不需要填写服务器 IP 或域名，直接启动即可。`.env` 中的默认设置为：
 
 ```dotenv
 HTTPS=true
-TLS_HOSTS=localhost,127.0.0.1,192.168.1.20,scrcpy.example.com
 ```
 
 ```sh
 docker compose up -d --build
-docker compose cp studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
 ```
 
-使用 `docker run` 时，另加 `-e HTTPS=true`、`-e TLS_HOSTS=实际服务器地址` 和 `-v scrcpy-tls:/home/node/.tls`；导出命令为：
+使用 `docker run` 时，镜像默认启用 HTTPS；可加 `-v scrcpy-tls:/home/node/.tls` 持久化证书。
 
-```sh
-docker cp scrcpy-studio:/home/node/.tls/ca.crt ./scrcpy-studio-ca.crt
-```
+首次启动自动生成本地 CA 和服务器证书，随后访问 `https://服务器地址:8787`。Chrome 出现证书警告时，可以在浏览器允许的情况下选择“高级 → 继续访问”，接受此站点的证书例外。无需先导出或安装 CA。
 
-在**打开网页的电脑**上导入这个 CA：Windows 双击证书 → 安装证书 → 当前用户 → 将所有证书放入“受信任的根证书颁发机构”。macOS 导入钥匙串并设置信任；Linux 根据发行版或浏览器的证书管理器导入。重新打开浏览器，访问证书中包含的 IP 或域名。
+自动证书只包含 localhost 和回环地址，不会尝试识别宿主机的公网或局域网地址。远程访问可能同时存在“不受信任”和“地址不匹配”提示，这是此简化模式的预期行为；仅导入 CA 不会消除地址不匹配。要消除警告，可使用下文的自有证书。
 
-`TLS_HOSTS` 用于证书的 Subject Alternative Name，决定证书匹配哪些 IP / 域名，不是访问白名单。部分浏览器接受自签名证书例外后仍能使用 WebCodecs，但不同浏览器或策略可能不同；导入 CA 信任并使用匹配的地址更可靠。HTTP 模式不使用这个参数。只导出 `ca.crt` 公共证书，私钥 `ca.key` / `server.key` 留在证书卷内。
+接受证书例外后，部分浏览器可以正常使用 WebCodecs；是否允许取决于浏览器及其策略，本服务不修改浏览器安全设置。
 
-每个部署首次启动会生成独立 CA 和服务器证书。证书卷在更新镜像时保留；修改 `TLS_HOSTS` 后重新创建容器，会用原 CA 签发新证书，无需重新导入 CA。服务器证书有效期一年，启动时如果不足七天会重签；长期连续运行时请在到期前重启容器。CA 有效期十年。删除证书卷会生成新 CA，需要重新导入信任。
+每个部署生成独立证书，更新镜像时保留证书卷；旧版本的有效证书也会继续使用。服务器证书有效期一年，启动时如果不足七天会重签；长期连续运行时请在到期前重启容器。CA 有效期十年。证书更换后浏览器可能再次要求确认。
 
 ### 使用已有证书
 
@@ -100,8 +93,7 @@ volumes:
 | `PORT` | 容器内服务端口 `8787` |
 | `STUDIO_USER` | 登录用户名，默认 `admin`；仅启用密码时使用 |
 | `STUDIO_PASSWORD` | 默认空；直接进入 Web UI，非空时才要求登录 |
-| `HTTPS` | 默认关闭；设置 `true` 才自动生成证书并启用 HTTPS |
-| `TLS_HOSTS` | 自动证书包含的地址，逗号分隔，无协议和端口；默认 `localhost,127.0.0.1,::1` |
+| `HTTPS` | 镜像及 Compose 默认 `true`；本地 Node 运行需显式设置 `true` |
 | `TLS_DIR` | 自动证书目录；镜像 `/home/node/.tls`，本地 `.tls` |
 | `TLS_CERT` / `TLS_KEY` | 自有 PEM 证书链和私钥路径，必须一起设置；优先于自动证书 |
 
