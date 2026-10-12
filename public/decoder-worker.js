@@ -1,9 +1,9 @@
 import { unpackPacket, codecFromConfig, joinBytes, LatestFrame } from './decoder-core.js';
 
 let canvas, context, socket, decoder, configBytes, decoderConfig, mode = 'prefer-hardware';
-let generation = 0, waitingKey = true, configuring = false, suspended = false;
+let generation = 0, waitingKey = true, configuring = false;
 let renderRaf, renderTimer, pendingPackets = [], pendingBytes = 0;
-let resets = 0, hiddenDrops = 0, lastRecovery = '无';
+let resets = 0, lastRecovery = '无';
 const supportedConfigs = new Map(), receivedAtByFrame = new WeakMap();
 let received = 0, rendered = 0, dropped = 0, bytes = 0, lastStats = performance.now(), lastResync = 0;
 let lastDrawMs = 0, maxDrawMs = 0, decoderPreference = '等待视频';
@@ -58,7 +58,6 @@ async function configure(data, fallback = false) {
         // must never make an already decoded frame look like a stuck decoder.
         receivedAtByFrame.set(frame, submitted.get(frame.timestamp));
         submitted.delete(frame.timestamp);
-        if (suspended) { frame.close(); return; }
         if (latest.replace(frame)) { dropped++; }
         if (renderRaf === undefined && renderTimer === undefined) scheduleDraw();
       },
@@ -84,7 +83,6 @@ async function configure(data, fallback = false) {
   }
 }
 function decodePacket(packet) {
-  if (suspended) { hiddenDrops++; return; }
   if (configuring) {
     if (packet.key) clearPending();
     if (!packet.key && !pendingPackets.length) { dropped++; return; }
@@ -138,7 +136,7 @@ onmessage = async ({ data: message }) => {
   if (message.type === 'init') {
     canvas = message.canvas; context = canvas.getContext('2d', { alpha: false, desynchronized: true });
     if (!context || typeof VideoDecoder === 'undefined') { report({ type: 'error', message: '需要支持 WebCodecs 和 OffscreenCanvas 的新版 Chrome / Edge，请从 localhost 打开' }); return; }
-    mode = message.mode; suspended = false;
+    mode = message.mode;
     socket = new WebSocket(message.url); socket.binaryType = 'arraybuffer';
     socket.onopen = () => send({ type: 'start', serial: message.serial, settings: message.settings });
     socket.onmessage = ({ data }) => {
@@ -158,11 +156,6 @@ onmessage = async ({ data: message }) => {
     socket.onclose = () => { releaseDecoder(); report({ type: 'disconnected' }); };
     socket.onerror = () => report({ type: 'error', message: '无法连接本地服务，请检查服务是否运行' });
   } else if (message.type === 'control') send(message.message);
-  else if (message.type === 'visibility' && suspended !== message.hidden) {
-    suspended = message.hidden;
-    if (suspended) { cancelDraw(); latest.clear(); submitted.clear(); clearPending(); }
-    else resync('页面恢复前台');
-  }
   else if (message.type === 'stop') stop();
   else if (message.type === 'screenshot') {
     try { report({ type: 'screenshot', blob: await canvas.convertToBlob({ type: 'image/png' }) }); }
@@ -172,7 +165,7 @@ onmessage = async ({ data: message }) => {
 setInterval(() => {
   const now = performance.now(), seconds = (now - lastStats) / 1000;
   report({ type: 'stats', fps: rendered / seconds, inputFps: received / seconds, mbps: bytes * 8 / seconds / 1e6,
-    dropped, hiddenDrops, resets, lastRecovery, waitingKey, suspended, pendingDecode: submitted.size,
+    dropped, resets, lastRecovery, waitingKey, pendingDecode: submitted.size,
     queue: decoder?.state === 'configured' ? decoder.decodeQueueSize : 0,
     drawMs: rendered ? lastDrawMs : null, maxDrawMs: rendered ? maxDrawMs : null, preference: decoderPreference,
     width: canvas?.width || desiredWidth, height: canvas?.height || desiredHeight });

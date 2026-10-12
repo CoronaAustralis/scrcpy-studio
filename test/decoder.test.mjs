@@ -86,12 +86,30 @@ test('worker closes superseded frames, renders newest only and releases on stop'
   d.callbacks.output(frame(3)); h.context.onmessage({ data: { type: 'stop' } });
   assert.equal(d.state, 'closed'); assert.deepEqual(closed, [1, 2, 3]);
 });
-test('visibility resume requests a clean key frame and does not replay hidden frames', async () => {
+test('background decoding continues and foreground preserves the same decoder and GOP', async () => {
   const h = harness(); h.configure(); await tick(); const d = h.decoders.at(-1);
-  h.context.onmessage({ data: { type: 'visibility', hidden: true } }); h.packet({ key: true }); assert.equal(d.chunks.length, 0);
-  h.context.onmessage({ data: { type: 'visibility', hidden: false } }); h.packet({ timestamp: 3000 }); assert.equal(d.chunks.length, 0);
-  h.packet({ key: true, timestamp: 4000 }); assert.equal(d.chunks.length, 1);
+  h.packet({ key:true, timestamp:1000 });
+  h.context.onmessage({ data:{ type:'visibility', hidden:true } }); h.packet({ timestamp:2000 });
+  d.callbacks.output({ timestamp:2000, displayWidth:720, displayHeight:1280, close() {} });
+  h.scheduled.at(-1)(); assert.equal(h.renders.length,1);
+  h.context.onmessage({ data:{ type:'visibility', hidden:false } }); h.packet({ timestamp:3000 });
+  assert.deepEqual(d.chunks.map(c => c.timestamp),[1000,2000,3000]);
+  assert.equal(d.resets,0); assert.equal(h.decoders.length,1);
+  assert.equal(h.sent.filter(m => ['visibility','resync'].includes(m.type)).length,0);
 });
+
+test('socket close never requests automatic reconnect', () => {
+  const h = harness();
+  h.sockets[0].onclose({ code:1012 }); assert.equal(h.reports.at(-1).type,'disconnected');
+});
+
+test('background state does not send pause requests after startup', () => {
+  const h = harness();
+  h.context.onmessage({ data:{ type:'visibility', hidden:true } });
+  h.sockets[0].onmessage({ data:JSON.stringify({ type:'connected' }) });
+  assert.equal(h.sent.filter(m => m.type === 'visibility').length,0);
+});
+
 test('stale async configure cannot resurrect a closed decoder', async () => {
   const h = harness(); h.configure(); h.context.onmessage({ data: { type: 'stop' } }); await tick();
   assert.equal(h.decoders.length, 0);

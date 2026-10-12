@@ -1,6 +1,6 @@
 {
   "name": "scrcpy-studio",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "A low-latency WebCodecs client for official scrcpy 4.1",

@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+let serverWaitingKey = false;
 let token, selected, deviceList = [], worker, active = false, busy = false, dimensions = { width: 0, height: 0 };
 let framesShown = false, toastTimer, timeout, serverDrops = 0, clientDrops = 0, history = [], lastModel = '', hasError = false;
 const controls = [...document.querySelectorAll('[data-key]'), $('rotate'), $('paste'), $('screenshot')];
@@ -75,12 +76,13 @@ function createCanvas() {
   canvas.setAttribute('aria-label', 'Android 设备屏幕，可点击、拖动和滚动操控'); $('screen').replaceWith(canvas); bindInput(canvas); return canvas;
 }
 function disconnect(message = '已断开连接') {
+  serverWaitingKey = false;
   clearTimeout(timeout); worker?.postMessage({ type: 'stop' }); worker?.terminate(); worker = null;
   active = busy = framesShown = false; pointers.clear(); dimensions = { width: 0, height: 0 };
   $('screen').hidden = true; $('empty').hidden = false; $('empty-message').textContent = message;
   $('viewer').classList.remove('streaming'); $('screen-area').classList.remove('native-area'); status('未连接');
   $('view-hint').textContent = '连接后可直接点击、滑动与输入';
-  for (const id of ['fps', 'mbps', 'latency', 'queue', 'dropped', 'pending', 'input-fps', 'recoveries', 'hidden-drops', 'sync-state']) $(id).textContent = '—';
+  for (const id of ['fps', 'mbps', 'latency', 'queue', 'dropped', 'pending', 'input-fps', 'recoveries', 'sync-state']) $(id).textContent = '—';
   $('decoder-status').textContent = '尚未连接'; history = []; chart(); setButtons(); updateSettings();
   $('chart-label').textContent = '等待画面'; $('resolution').textContent = 'H.264 / 实时画面';
 }
@@ -93,7 +95,7 @@ function start() {
   status('正在连接'); $('empty').hidden = false; $('empty-message').textContent = '正在连接设备…'; setButtons();
   lastModel = deviceList.find(d => d.serial === selected)?.model || selected; $('viewer-title').textContent = lastModel;
   const canvas = createCanvas(), offscreen = canvas.transferControlToOffscreen();
-  worker = new Worker('/decoder-worker.js?v=0.2.0', { type: 'module' });
+  worker = new Worker('/decoder-worker.js?v=0.2.2', { type: 'module' });
   worker.onmessage = ({ data }) => onWorkerMessage(data);
   worker.onerror = event => { toast(`播放器错误：${event.message}`, true); disconnect('播放器启动失败，请查看错误提示'); };
   worker.postMessage({ type: 'init', canvas: offscreen, url: `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/stream?token=${encodeURIComponent(token)}`, serial: selected, settings: settings(), mode: $('decoder').value }, [offscreen]);
@@ -125,11 +127,10 @@ function onWorkerMessage(event) {
     $('input-fps').textContent = event.inputFps.toFixed(0);
     $('recoveries').textContent = event.resets;
     $('recoveries').title = `最近原因：${event.lastRecovery}`;
-    $('hidden-drops').textContent = event.hiddenDrops;
-    $('sync-state').textContent = event.suspended ? '后台暂停' : event.waitingKey ? '等待关键帧' : '已同步';
+    $('sync-state').textContent = serverWaitingKey ? '服务端等待关键帧' : event.waitingKey ? '等待关键帧' : '已同步';
     history.push(event.fps); if (history.length > 40) history.shift(); chart();
     $('chart-label').textContent = `${event.fps.toFixed(0)} / ${settings().fps} FPS`;
-  } else if (event.type === 'transport') { serverDrops = event.dropped; $('pending').textContent = event.pending; $('dropped').textContent = clientDrops + serverDrops; }
+  } else if (event.type === 'transport') { serverWaitingKey = !!event.waitingKey; serverDrops = event.dropped; $('pending').textContent = event.pending; $('dropped').textContent = clientDrops + serverDrops; }
   else if (event.type === 'error') { hasError = true; toast(event.message, true); disconnect('连接遇到问题，请查看提示并重试。'); }
   else if (event.type === 'notice') toast(event.message);
   else if (event.type === 'disconnected' && active) disconnect(hasError ? '连接失败，请查看错误提示。' : '设备连接已断开，点击开始投屏重新连接。');
@@ -189,12 +190,12 @@ $('apply').onclick = async () => { disconnect('正在应用设置…'); await ne
 $('refresh').onclick = refresh;
 document.querySelectorAll('[data-key]').forEach(button => button.onclick = () => key(Number(button.dataset.key)));
 $('rotate').onclick = () => control({ type: 'rotate' });
-$('recover').onclick = () => { control({ type: 'resync' }); toast('正在请求新的关键帧'); };
+$('recover').onclick = () => { control({ type: 'resync' }); toast('正在等待关键帧重新同步画面'); };
 $('paste').onclick = () => { const text = $('paste-text').value; if (text) { control({ type: 'paste', text }); toast('文字已发送'); } };
 $('screenshot').onclick = () => worker?.postMessage({ type: 'screenshot' });
 $('fit').onclick = () => { const native = $('screen').classList.toggle('native'); $('screen-area').classList.toggle('native-area', native); toast(native ? '原始像素显示' : '适应窗口，编码分辨率保持不变'); };
 $('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('viewer').requestFullscreen(); } catch (e) { toast(e.message, true); } };
-document.addEventListener('visibilitychange', () => { releasePointers(); worker?.postMessage({ type: 'visibility', hidden: document.hidden }); });
+document.addEventListener('visibilitychange', releasePointers);
 window.addEventListener('blur', releasePointers);
 window.addEventListener('beforeunload', () => worker?.postMessage({ type: 'stop' }));
 let adbPending = false;

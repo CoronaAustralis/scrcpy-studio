@@ -71,8 +71,9 @@ export class Session {
     this.video.on('data', feed); feed(result.data); this.video.resume();
     this.send({ type: 'connected', settings: this.settings, serverVersion: '4.1' });
     this.interval = setInterval(() => {
-      if (this.window.congested(this.ws.bufferedAmount)) this.recover();
-      this.send({ type: 'transport', pending: this.window.pending.size, dropped: this.window.dropped });
+      // An idle screen is not a broken stream. Only discard/resync when an
+      // actual incoming video packet encounters backpressure.
+      this.send({ type: 'transport', pending: this.window.pending.size, dropped: this.window.dropped, waitingKey: this.window.waitingKey });
     }, 1000);
   }
   onVideo(event) {
@@ -109,6 +110,9 @@ export class Session {
   message(message) {
     if (message.type === 'ack') {
       if (Number.isInteger(message.id) && message.id >= 0 && message.id <= this.window.sequence) this.window.ack(message.id);
+    } else if (message.type === 'visibility') {
+      if (typeof message.hidden !== 'boolean') throw new Error('Invalid visibility');
+      // Older pages may still send this; visibility no longer changes streaming.
     } else if (message.type === 'resync') this.recover();
     else this.writeControl(encodeControl(message));
   }
