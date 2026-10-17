@@ -117,15 +117,12 @@ pnpm start
 
 在新版 Chrome / Edge 打开 **http://localhost:8787**，选择设备，点击「开始投屏」。
 
-当前电脑自动识别 `D:\tools\scrcpy\scrcpy.exe` 及旁边的 `scrcpy-server`，ADB 使用 PATH 中的版本。其他机器可这样指定：
 
 ```powershell
-$env:ADB_PATH = 'C:\Android\platform-tools\adb.exe'
-$env:SCRCPY_HOME = 'C:\tools\scrcpy-win64-v4.1'
+$env:ADB_PATH = ''
+$env:SCRCPY_HOME = ''
 pnpm start
 ```
-
-也可设置 `SCRCPY_PATH` 为官方可执行文件的绝对路径，或设置 `SCRCPY_SERVER_PATH` 为 **4.1** 的服务端文件。手动指定服务端时由使用者保证版本；手机端版本不匹配会在界面报错。**不能使用旧 ws-scrcpy 的 1.19-ws8 JAR**，也不能把 3.x 的服务端当作 4.1 使用。
 
 `PORT` 可覆盖默认的 8787，`HOST` 可指定监听地址；网页和 WebSocket 校验 Host、Origin 和会话令牌。
 

@@ -22,6 +22,7 @@ dialog summary { cursor:pointer; }
 .adb-device span { white-space:pre-wrap; overflow-wrap:anywhere; min-width:0; }
 .adb-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; }
 .adb-actions .button { width:auto; }
+.adb-actions + .field-note { margin:14px 0 18px; line-height:1.7; }
 #adb-result { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--bg); padding:12px; border-radius:8px; max-height:180px; overflow:auto; }
 * {
   box-sizing:border-box
@@ -480,7 +481,7 @@ h1 span {
   display:flex;
   gap:2px
 }
-.device-controls button {
+.device-controls button,.viewer-control-slot button {
   border:0;
   background:transparent;
   padding:8px 10px;
@@ -491,11 +492,11 @@ h1 span {
   gap:8px;
   color:#b3c0c4
 }
-.device-controls button span {
+.device-controls button span,.viewer-control-slot button span {
   font-size:10px;
   color:#89969d
 }
-.device-controls button:hover:enabled {
+.device-controls button:hover:enabled,.viewer-control-slot button:hover:enabled {
   background:#2d3731;
   color:var(--accent)
 }
@@ -960,4 +961,58 @@ body.busy .status-pill i {
 .primary.disconnect:hover:enabled {
   background:#35442e;
   color:#e1ebd8
+}
+
+/* Webpage fullscreen keeps the existing canvas and control buttons alive. */
+.viewer-control-slot { display:none; }
+body.page-fullscreen { overflow:hidden; }
+body.page-fullscreen .sidebar,
+body.page-fullscreen .topbar,
+body.page-fullscreen .heading,
+body.page-fullscreen .settings,
+body.page-fullscreen .metrics,
+body.page-fullscreen .device-controls,
+body.page-fullscreen footer { display:none; }
+body.page-fullscreen #viewer {
+  position:fixed;
+  inset:0;
+  z-index:9;
+  width:100%;
+  height:100vh;
+  height:100dvh;
+  border:0;
+  border-radius:0;
+  display:flex;
+  flex-direction:column;
+}
+body.page-fullscreen .viewer-top { flex:0 0 45px; }
+body.page-fullscreen .screen-area {
+  flex:1 1 0;
+  min-height:0;
+  height:auto;
+  min-width:0;
+}
+body.page-fullscreen .viewer-bottom {
+  flex:0 0 auto;
+  height:auto;
+  min-height:48px;
+  padding:5px 12px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  gap:8px;
+}
+body.page-fullscreen #view-hint { display:none; }
+body.page-fullscreen .viewer-control-slot,
+body.page-fullscreen .viewer-control-slot>div { display:flex; align-items:center; gap:2px; }
+body.page-fullscreen #viewer-device-tools { justify-self:center; }
+body.page-fullscreen .view-actions { justify-self:end; }
+body.page-fullscreen #page-fullscreen { color:var(--accent); background:var(--accent-dark); }
+@media(max-width:640px) {
+  body.page-fullscreen .viewer-control-slot button { padding:7px; gap:4px; }
+  body.page-fullscreen .viewer-control-slot button span { display:none; }
+}
+@media(max-width:420px) {
+  body.page-fullscreen .viewer-bottom { grid-template-columns:1fr auto; }
+  body.page-fullscreen #viewer-device-tools { justify-self:end; }
+  body.page-fullscreen .view-actions { grid-column:1 / -1; justify-self:end; }
 }

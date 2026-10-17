@@ -195,6 +195,34 @@ $('paste').onclick = () => { const text = $('paste-text').value; if (text) { con
 $('screenshot').onclick = () => worker?.postMessage({ type: 'screenshot' });
 $('fit').onclick = () => { const native = $('screen').classList.toggle('native'); $('screen-area').classList.toggle('native-area', native); toast(native ? '原始像素显示' : '适应窗口，编码分辨率保持不变'); };
 $('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await $('viewer').requestFullscreen(); } catch (e) { toast(e.message, true); } };
+const deviceBar = document.querySelector('.device-controls');
+const [navigationButtons, deviceButtons] = [...deviceBar.children];
+let pageFullscreen = false, previousFocus;
+function setPageFullscreen(enabled) {
+  if (enabled === pageFullscreen) return;
+  releasePointers();
+  pageFullscreen = enabled;
+  if (enabled) {
+    previousFocus = document.activeElement;
+    $('viewer-navigation').append(navigationButtons);
+    $('viewer-device-tools').append(deviceButtons);
+  } else {
+    deviceBar.append(navigationButtons, deviceButtons);
+  }
+  document.body.classList.toggle('page-fullscreen', enabled);
+  $('page-fullscreen').setAttribute('aria-pressed', String(enabled));
+  const label = enabled ? '退出网页全屏（Esc）' : '网页全屏';
+  $('page-fullscreen').title = label;
+  $('page-fullscreen').setAttribute('aria-label', label);
+  if (enabled) $('page-fullscreen').focus({ preventScroll:true });
+  else if (previousFocus?.isConnected) previousFocus.focus({ preventScroll:true });
+}
+$('page-fullscreen').onclick = () => setPageFullscreen(!pageFullscreen);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && pageFullscreen) {
+    event.preventDefault(); event.stopImmediatePropagation(); setPageFullscreen(false);
+  }
+}, true);
 document.addEventListener('visibilitychange', releasePointers);
 window.addEventListener('blur', releasePointers);
 window.addEventListener('beforeunload', () => worker?.postMessage({ type: 'stop' }));
